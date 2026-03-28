@@ -1,0 +1,407 @@
+import React, { useState, useEffect } from 'react';
+import { fetchMenus, placeOrder } from '../services/api';
+import MenuCard from '../components/MenuCard';
+import { Utensils, Search, Filter, Sparkles, ChevronDown, ShoppingBag, X, Plus, Minus, CheckCircle2 } from 'lucide-react';
+
+const Dashboard = () => {
+  const [menus, setMenus] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [activeCategory, setActiveCategory] = useState('All');
+  const [searchQuery, setSearchQuery] = useState('');
+  
+  // Cart State
+  const [cart, setCart] = useState([]);
+  const [isCartOpen, setIsCartOpen] = useState(false);
+  const [orderStatus, setOrderStatus] = useState({ loading: false, success: false });
+
+  useEffect(() => {
+    const loadMenus = async () => {
+      try {
+        const data = await fetchMenus();
+        setMenus(data);
+        setLoading(false);
+      } catch (err) {
+        setError('Connection interrupted. Please check your Atlas instance.');
+        setLoading(false);
+      }
+    };
+    loadMenus();
+  }, []);
+
+  const getCurrentSlot = () => {
+    const hour = new Date().getHours();
+    if (hour >= 5 && hour < 16) return 'morning';
+    if (hour >= 16 && hour < 21) return 'evening';
+    return 'night';
+  };
+
+  const currentSlot = getCurrentSlot();
+
+  const categories = ['All', ...new Set(menus.map(item => item.category))];
+  
+  const filteredMenus = menus.filter(item => {
+    const matchesCategory = activeCategory === 'All' || item.category === activeCategory;
+    const matchesSearch = item.name.toLowerCase().includes(searchQuery.toLowerCase());
+    
+    // Case-insensitive matching for time slots
+    const matchesTime = !item.timeSlots || item.timeSlots.length === 0 || 
+      item.timeSlots.some(slot => slot.toLowerCase() === currentSlot.toLowerCase());
+    
+    return matchesCategory && matchesSearch && matchesTime;
+  });
+
+  const addToCart = (item) => {
+    setCart(prev => {
+      const existing = prev.find(i => i._id === item._id);
+      if (existing) {
+        return prev.map(i => i._id === item._id ? { ...i, quantity: i.quantity + 1 } : i);
+      }
+      return [...prev, { ...item, quantity: 1 }];
+    });
+    setIsCartOpen(true);
+  };
+
+  const removeFromCart = (itemId) => {
+    setCart(prev => prev.filter(i => i._id !== itemId));
+  };
+
+  const updateQuantity = (itemId, delta) => {
+    setCart(prev => prev.map(i => {
+      if (i._id === itemId) {
+        const newQty = Math.max(1, i.quantity + delta);
+        return { ...i, quantity: newQty };
+      }
+      return i;
+    }));
+  };
+
+  const cartTotal = cart.reduce((sum, item) => {
+    const price = item.offerPercent > 0 
+      ? item.price - (item.price * item.offerPercent / 100) 
+      : item.price;
+    return sum + (price * item.quantity);
+  }, 0);
+
+  const handlePlaceOrder = async () => {
+    if (cart.length === 0) return;
+    
+    setOrderStatus({ loading: true, success: false });
+    try {
+      const orderData = {
+        items: cart.map(item => ({
+          menuItemId: item._id,
+          name: item.name,
+          price: item.offerPercent > 0 
+            ? item.price - (item.price * item.offerPercent / 100) 
+            : item.price,
+          quantity: item.quantity
+        })),
+        totalAmount: cartTotal
+      };
+      
+      await placeOrder(orderData);
+      setOrderStatus({ loading: false, success: true });
+      setCart([]);
+      setTimeout(() => {
+        setOrderStatus({ loading: false, success: false });
+        setIsCartOpen(false);
+      }, 3000);
+    } catch (err) {
+      console.error('Order placement failed:', err);
+      setOrderStatus({ loading: false, success: false });
+      alert('Failed to place order. Database connection error.');
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-12 h-12 border-4 border-orange-200 border-t-accent rounded-full animate-spin"></div>
+          <p className="text-gray-500 font-medium animate-pulse">Syncing with Atlas...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center p-6 text-center">
+        <div className="max-w-md bg-white p-8 rounded-3xl shadow-2xl">
+          <div className="w-16 h-16 bg-red-50 text-red-500 rounded-full flex items-center justify-center mx-auto mb-6">
+            <Sparkles className="w-8 h-8" />
+          </div>
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">Oops! Connectivity Issue</h2>
+          <p className="text-gray-600 mb-8">{error}</p>
+          <button 
+            onClick={() => window.location.reload()}
+            className="w-full py-3 bg-gray-900 text-white rounded-2xl font-bold hover:bg-black transition-all"
+          >
+            Reconnect To Cluster
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-background selection:bg-orange-100 selection:text-orange-600 relative">
+      
+      {/* Navigation / Header */}
+      <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-xl border-b border-gray-100">
+        <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="bg-accent p-1.5 rounded-lg text-white">
+              <Utensils className="w-5 h-5" />
+            </div>
+            <span className="text-xl font-black tracking-tighter uppercase text-gray-900">
+              Atlas_Dine
+            </span>
+          </div>
+          <div className="hidden md:flex items-center gap-8 text-sm font-medium text-gray-500">
+            <a href="#" className="text-gray-900 hover:text-accent font-bold">Menu</a>
+            <a href="#" className="hover:text-accent">Ordering</a>
+            <a href="#" className="hover:text-accent font-bold text-green-500">Orders Connected</a>
+          </div>
+          <div className="flex items-center gap-4">
+            <button 
+              onClick={() => setIsCartOpen(true)}
+              className="relative p-2 text-gray-700 hover:text-accent transition-colors"
+            >
+              <ShoppingBag className="w-6 h-6" />
+              {cart.length > 0 && (
+                <span className="absolute -top-1 -right-1 bg-accent text-white text-[10px] font-bold h-5 w-5 rounded-full flex items-center justify-center border-2 border-white">
+                  {cart.reduce((s, i) => s + i.quantity, 0)}
+                </span>
+              )}
+            </button>
+            <button className="px-4 py-2 bg-gray-900 text-white text-sm font-bold rounded-full hover:bg-black transition-all">
+              Dashboard
+            </button>
+          </div>
+        </div>
+      </header>
+
+      {/* Hero Section */}
+      <div className="relative overflow-hidden bg-white pt-12 pb-20 px-6">
+        <div className="max-w-7xl mx-auto grid lg:grid-cols-2 gap-12 items-center">
+          <div className="relative z-10">
+            <div className="inline-flex items-center gap-4 mb-6 transition-all animate-in fade-in slide-in-from-bottom-2">
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-orange-100 text-accent text-xs font-bold uppercase tracking-wider">
+                <Sparkles className="w-3 h-3" /> Real-time Atlas Sync
+              </div>
+              <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-white text-xs font-bold uppercase tracking-wider ${
+                currentSlot === 'morning' ? 'bg-blue-500' : currentSlot === 'evening' ? 'bg-orange-500' : 'bg-indigo-900'
+              }`}>
+                {currentSlot.charAt(0).toUpperCase() + currentSlot.slice(1)} Menu Active
+              </div>
+            </div>
+            <h1 className="text-5xl lg:text-7xl font-black text-gray-900 mb-6 leading-[1.05] tracking-tighter">
+              Discover <span className="text-accent underline decoration-orange-200">The Taste</span> Of Cloud.
+            </h1>
+            <p className="text-lg text-gray-500 max-w-lg mb-10 leading-relaxed">
+              Every dish you see is pulled live from our MongoDB Atlas cluster. Fresh data, fresh flavors, delivered instantly.
+            </p>
+            
+            {/* Search Bar */}
+            <div className="relative max-w-md group">
+              <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none">
+                <Search className="w-5 h-5 text-gray-400 group-focus-within:text-accent transition-colors" />
+              </div>
+              <input 
+                type="text" 
+                placeholder="Search your favorite dish..."
+                className="w-full pl-12 pr-4 py-4 bg-gray-50 border-2 border-transparent focus:border-accent focus:bg-white rounded-2xl outline-none text-gray-900 transition-all font-medium text-lg shadow-sm"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
+            </div>
+          </div>
+          
+          <div className="hidden lg:block relative">
+             <div className="absolute -inset-4 bg-orange-500/10 rounded-[3rem] blur-3xl"></div>
+             <img 
+               src="https://images.unsplash.com/photo-1504674900247-0877df9cc836?ixlib=rb-4.0.3&auto=format&fit=crop&w=1000&q=80" 
+               alt="Gourmet Food" 
+               className="relative rounded-[2.5rem] shadow-2xl border-8 border-white object-cover aspect-[4/3]"
+             />
+          </div>
+        </div>
+      </div>
+
+      <main className="max-w-7xl mx-auto px-6 py-12">
+        {/* Filter Controls */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-12">
+          <div className="flex items-center gap-3 overflow-x-auto pb-4 md:pb-0 no-scrollbar">
+            {categories.map(cat => (
+              <button
+                key={cat}
+                onClick={() => setActiveCategory(cat)}
+                className={`px-6 py-2 rounded-full text-sm font-bold whitespace-nowrap transition-all duration-300 ${
+                  activeCategory === cat 
+                    ? 'bg-accent text-white shadow-lg shadow-orange-500/30' 
+                    : 'bg-white border border-gray-100 text-gray-500 hover:border-accent hover:text-accent'
+                }`}
+              >
+                {cat}
+              </button>
+            ))}
+          </div>
+          
+          <div className="flex items-center gap-4 text-sm font-bold text-gray-400">
+            <span className="flex items-center gap-2">
+              <Filter className="w-4 h-4" /> Filtered
+            </span>
+            <span className="text-gray-900 underline decoration-accent underline-offset-4">
+              {filteredMenus.length} Items Found
+            </span>
+          </div>
+        </div>
+
+        {/* Grid Display */}
+        {filteredMenus.length > 0 ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
+            {filteredMenus.map((item, idx) => (
+              <MenuCard key={item._id} item={item} index={idx} onAdd={addToCart} />
+            ))}
+          </div>
+        ) : (
+          <div className="text-center py-32 bg-white rounded-[3rem] border-4 border-dashed border-gray-100">
+            <div className="bg-gray-50 w-24 h-24 rounded-full flex items-center justify-center mx-auto mb-6">
+              <Search className="w-10 h-10 text-gray-300" />
+            </div>
+            <h3 className="text-2xl font-bold text-gray-900 mb-2">No Matches Found</h3>
+            <p className="text-gray-500 max-w-xs mx-auto">
+              We couldn't find any dishes matching your current selection.
+            </p>
+            <button 
+              onClick={() => { setActiveCategory('All'); setSearchQuery(''); }}
+              className="mt-8 px-8 py-3 bg-gray-900 text-white rounded-full font-bold hover:scale-105 transition-transform"
+            >
+              Clear All Filters
+            </button>
+          </div>
+        )}
+      </main>
+
+      {/* Cart Drawer */}
+      {isCartOpen && (
+        <div className="fixed inset-0 z-[100] flex justify-end">
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setIsCartOpen(false)}></div>
+          <div className="relative w-full max-w-md bg-white h-full shadow-2xl flex flex-col animate-in slide-in-from-right duration-300">
+            <div className="p-6 border-b border-gray-100 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <ShoppingBag className="w-6 h-6 text-accent" />
+                <h2 className="text-xl font-bold text-gray-900">Your Cart</h2>
+              </div>
+              <button 
+                onClick={() => setIsCartOpen(false)}
+                className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            
+            <div className="flex-1 overflow-y-auto p-6 space-y-6">
+              {cart.length === 0 ? (
+                <div className="text-center py-20">
+                  <div className="w-20 h-20 bg-gray-50 rounded-full flex items-center justify-center mx-auto mb-4 text-gray-300">
+                    <ShoppingBag className="w-10 h-10" />
+                  </div>
+                  <p className="text-gray-500 font-medium lowercase">your cart is currently empty_</p>
+                </div>
+              ) : (
+                cart.map(item => (
+                  <div key={item._id} className="flex gap-4">
+                    <img 
+                      src={item.imageUrl} 
+                      alt={item.name} 
+                      className="w-20 h-20 rounded-xl object-cover shrink-0"
+                    />
+                    <div className="flex-1">
+                      <h4 className="font-bold text-gray-900 text-lg mb-1">{item.name}</h4>
+                      <p className="text-accent font-bold mb-3">
+                        ₹{(item.offerPercent > 0 
+                          ? item.price - (item.price * item.offerPercent / 100) 
+                          : item.price).toFixed(0)}
+                      </p>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3 bg-gray-50 rounded-lg p-1">
+                          <button 
+                            onClick={() => updateQuantity(item._id, -1)}
+                            className="w-6 h-6 flex items-center justify-center hover:bg-white rounded-md shadow-sm transition-all"
+                          >
+                            <Minus className="w-3 h-3 text-gray-600" />
+                          </button>
+                          <span className="text-sm font-bold min-w-[20px] text-center">{item.quantity}</span>
+                          <button 
+                            onClick={() => updateQuantity(item._id, 1)}
+                            className="w-6 h-6 flex items-center justify-center hover:bg-white rounded-md shadow-sm transition-all"
+                          >
+                            <Plus className="w-3 h-3 text-gray-600" />
+                          </button>
+                        </div>
+                        <button 
+                          onClick={() => removeFromCart(item._id)}
+                          className="text-xs font-bold text-gray-400 hover:text-red-500 transition-colors"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+            
+            <div className="p-6 border-t border-gray-100 bg-gray-50/50">
+              <div className="flex items-center justify-between mb-6">
+                <span className="text-gray-500 font-bold uppercase text-xs tracking-widest">Grand Total</span>
+                <span className="text-2xl font-black text-gray-900">₹{cartTotal.toFixed(0)}</span>
+              </div>
+              
+              {orderStatus.success ? (
+                <div className="w-full py-4 bg-green-500 text-white rounded-2xl font-bold flex items-center justify-center gap-2 animate-bounce">
+                  <CheckCircle2 className="w-5 h-5" /> Order Placed!
+                </div>
+              ) : (
+                <button 
+                  onClick={handlePlaceOrder}
+                  disabled={cart.length === 0 || orderStatus.loading}
+                  className="w-full py-4 bg-gray-900 text-white rounded-2xl font-bold hover:bg-black disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-xl shadow-gray-200"
+                >
+                  {orderStatus.loading ? 'Syncing Order...' : 'Place My Order'}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Footer / Contact */}
+      <footer className="bg-white border-t border-gray-100 pt-20 pb-12 px-6">
+        <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-8">
+           <div className="flex items-center gap-2">
+            <div className="bg-gray-100 p-2 rounded-lg text-gray-900">
+              <Utensils className="w-6 h-6" />
+            </div>
+            <span className="text-2xl font-black tracking-tighter uppercase text-gray-900">
+              Atlas_Dine
+            </span>
+          </div>
+          <div className="text-gray-400 text-sm font-medium">
+            © 2026 Crafted for Premium Experiences. Powered by Atlas.
+          </div>
+          <div className="flex gap-6">
+             <div className="w-10 h-10 rounded-full bg-gray-50 flex items-center justify-center hover:bg-orange-50 transition-colors cursor-pointer">
+               <ChevronDown className="w-5 h-5 text-gray-400 rotate-180" />
+             </div>
+          </div>
+        </div>
+      </footer>
+    </div>
+  );
+};
+
+export default Dashboard;
