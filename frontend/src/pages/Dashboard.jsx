@@ -15,6 +15,16 @@ const Dashboard = () => {
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [orderStatus, setOrderStatus] = useState({ loading: false, success: false });
 
+  // Customization States
+  const [customizingItem, setCustomizingItem] = useState(null);
+  const [selectedPreferences, setSelectedPreferences] = useState(['Standard']);
+  const [customDescription, setCustomDescription] = useState('');
+
+  const preferenceOptions = [
+    'Standard', 'Mild', 'Medium', 'Hot & Spicy', 'Extra Spicy', 
+    'Less Salt', 'Extra Salt', 'No Onion', 'No Garlic', 'Well Done'
+  ];
+
   useEffect(() => {
     const loadMenus = async () => {
       try {
@@ -52,23 +62,56 @@ const Dashboard = () => {
   });
 
   const addToCart = (item) => {
-    setCart(prev => {
-      const existing = prev.find(i => i._id === item._id);
-      if (existing) {
-        return prev.map(i => i._id === item._id ? { ...i, quantity: i.quantity + 1 } : i);
+    setCustomizingItem(item);
+    setSelectedPreferences(['Standard']);
+    setCustomDescription('');
+  };
+
+  const togglePreference = (opt) => {
+    setSelectedPreferences(prev => {
+      // If 'Standard' is selected and we click another option, remove 'Standard'
+      if (opt !== 'Standard' && prev.includes('Standard')) {
+        return [opt];
       }
-      return [...prev, { ...item, quantity: 1 }];
+      // If we click 'Standard', clear others and just have 'Standard'
+      if (opt === 'Standard') {
+        return ['Standard'];
+      }
+      
+      // Toggle logic
+      if (prev.includes(opt)) {
+        const next = prev.filter(p => p !== opt);
+        return next.length === 0 ? ['Standard'] : next;
+      } else {
+        return [...prev, opt];
+      }
     });
+  };
+
+  const confirmAddToCart = () => {
+    if (!customizingItem) return;
+
+    setCart(prev => {
+      return [...prev, { 
+        ...customizingItem, 
+        quantity: 1, 
+        preference: selectedPreferences.join(', '), 
+        customDescription: customDescription,
+        cartId: Date.now()
+      }];
+    });
+    
+    setCustomizingItem(null);
     setIsCartOpen(true);
   };
 
-  const removeFromCart = (itemId) => {
-    setCart(prev => prev.filter(i => i._id !== itemId));
+  const removeFromCart = (cartId) => {
+    setCart(prev => prev.filter(i => i.cartId !== cartId));
   };
 
-  const updateQuantity = (itemId, delta) => {
+  const updateQuantity = (cartId, delta) => {
     setCart(prev => prev.map(i => {
-      if (i._id === itemId) {
+      if (i.cartId === cartId) {
         const newQty = Math.max(1, i.quantity + delta);
         return { ...i, quantity: newQty };
       }
@@ -95,7 +138,9 @@ const Dashboard = () => {
           price: item.offerPercent > 0 
             ? item.price - (item.price * item.offerPercent / 100) 
             : item.price,
-          quantity: item.quantity
+          quantity: item.quantity,
+          preference: item.preference,
+          customDescription: item.customDescription
         })),
         totalAmount: cartTotal
       };
@@ -156,7 +201,7 @@ const Dashboard = () => {
               <Utensils className="w-5 h-5" />
             </div>
             <span className="text-xl font-black tracking-tighter uppercase text-gray-900">
-              Atlas_Dine
+              Dine_Elite
             </span>
           </div>
           <div className="hidden md:flex items-center gap-8 text-sm font-medium text-gray-500">
@@ -189,19 +234,19 @@ const Dashboard = () => {
           <div className="relative z-10">
             <div className="inline-flex items-center gap-4 mb-6 transition-all animate-in fade-in slide-in-from-bottom-2">
               <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-orange-100 text-accent text-xs font-bold uppercase tracking-wider">
-                <Sparkles className="w-3 h-3" /> Real-time Atlas Sync
+                <Sparkles className="w-3 h-3" /> Chef's Signature Menu
               </div>
               <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-white text-xs font-bold uppercase tracking-wider ${
                 currentSlot === 'morning' ? 'bg-blue-500' : currentSlot === 'evening' ? 'bg-orange-500' : 'bg-indigo-900'
               }`}>
-                {currentSlot.charAt(0).toUpperCase() + currentSlot.slice(1)} Menu Active
+                {currentSlot.charAt(0).toUpperCase() + currentSlot.slice(1)} Favorites Active
               </div>
             </div>
             <h1 className="text-5xl lg:text-7xl font-black text-gray-900 mb-6 leading-[1.05] tracking-tighter">
-              Discover <span className="text-accent underline decoration-orange-200">The Taste</span> Of Cloud.
+              Experience <span className="text-accent underline decoration-orange-200">The Art</span> Of Taste.
             </h1>
-            <p className="text-lg text-gray-500 max-w-lg mb-10 leading-relaxed">
-              Every dish you see is pulled live from our MongoDB Atlas cluster. Fresh data, fresh flavors, delivered instantly.
+            <p className="text-lg text-gray-500 max-w-lg mb-10 leading-relaxed font-medium">
+              Explore our curated selection of signature dishes, crafted with the freshest ingredients and culinary passion to elevate your dining experience.
             </p>
             
             {/* Search Bar */}
@@ -313,41 +358,57 @@ const Dashboard = () => {
                 </div>
               ) : (
                 cart.map(item => (
-                  <div key={item._id} className="flex gap-4">
+                  <div key={item.cartId} className="flex gap-4 p-4 bg-white rounded-2xl border border-gray-50 shadow-sm relative group overflow-hidden">
+                    <div className="absolute top-0 right-0 w-1 h-full bg-accent opacity-0 group-hover:opacity-100 transition-opacity"></div>
                     <img 
                       src={item.imageUrl} 
                       alt={item.name} 
                       className="w-20 h-20 rounded-xl object-cover shrink-0"
                     />
-                    <div className="flex-1">
-                      <h4 className="font-bold text-gray-900 text-lg mb-1">{item.name}</h4>
-                      <p className="text-accent font-bold mb-3">
-                        ₹{(item.offerPercent > 0 
-                          ? item.price - (item.price * item.offerPercent / 100) 
-                          : item.price).toFixed(0)}
-                      </p>
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3 bg-gray-50 rounded-lg p-1">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex justify-between items-start mb-1">
+                        <h4 className="font-bold text-gray-900 text-lg truncate pr-2">{item.name}</h4>
+                        <button 
+                          onClick={() => removeFromCart(item.cartId)}
+                          className="p-1 hover:text-red-500 text-gray-400 transition-colors"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                      
+                      <div className="flex flex-wrap gap-2 mb-2">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-orange-50 text-accent border border-orange-100 uppercase">
+                          {item.preference}
+                        </span>
+                        {item.customDescription && (
+                          <span className="text-[10px] text-gray-500 italic max-w-full truncate block">
+                            "{item.customDescription}"
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="flex items-center justify-between mt-auto">
+                        <span className="font-bold text-gray-900">
+                          ₹{(item.offerPercent > 0 
+                            ? item.price - (item.price * item.offerPercent / 100) 
+                            : item.price).toFixed(0)}
+                        </span>
+                        
+                        <div className="flex items-center gap-3 bg-gray-50 rounded-lg p-0.5 border border-gray-100">
                           <button 
-                            onClick={() => updateQuantity(item._id, -1)}
+                            onClick={() => updateQuantity(item.cartId, -1)}
                             className="w-6 h-6 flex items-center justify-center hover:bg-white rounded-md shadow-sm transition-all"
                           >
                             <Minus className="w-3 h-3 text-gray-600" />
                           </button>
-                          <span className="text-sm font-bold min-w-[20px] text-center">{item.quantity}</span>
+                          <span className="text-xs font-bold min-w-[16px] text-center">{item.quantity}</span>
                           <button 
-                            onClick={() => updateQuantity(item._id, 1)}
+                            onClick={() => updateQuantity(item.cartId, 1)}
                             className="w-6 h-6 flex items-center justify-center hover:bg-white rounded-md shadow-sm transition-all"
                           >
                             <Plus className="w-3 h-3 text-gray-600" />
                           </button>
                         </div>
-                        <button 
-                          onClick={() => removeFromCart(item._id)}
-                          className="text-xs font-bold text-gray-400 hover:text-red-500 transition-colors"
-                        >
-                          Remove
-                        </button>
                       </div>
                     </div>
                   </div>
@@ -378,6 +439,77 @@ const Dashboard = () => {
           </div>
         </div>
       )}
+      {/* Customization Modal */}
+      {customizingItem && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 sm:p-6">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-md" onClick={() => setCustomizingItem(null)}></div>
+          <div className="relative w-full max-w-lg bg-white rounded-[2rem] sm:rounded-[2.5rem] shadow-2xl flex flex-col overflow-hidden animate-in zoom-in-95 duration-200 max-h-[90vh]">
+            
+            {/* Modal Header/Image */}
+            <div className="h-20 sm:h-24 shrink-0 relative">
+              <img 
+                src={customizingItem.imageUrl} 
+                alt={customizingItem.name} 
+                className="w-full h-full object-cover"
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-white via-transparent to-transparent"></div>
+              <button 
+                onClick={() => setCustomizingItem(null)}
+                className="absolute top-4 right-4 p-2 bg-black/20 backdrop-blur-md hover:bg-black/40 rounded-full transition-colors text-white"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            {/* Scrollable Content Area */}
+            <div className="overflow-y-auto px-6 sm:px-8 pb-4 pt-1 custom-scrollbar">
+              <h2 className="text-xl sm:text-2xl font-black text-gray-900 mb-0.5 leading-tight">How Would You Like It?</h2>
+              <p className="text-[10px] sm:text-xs text-gray-500 mb-4 font-medium italic">Customizing: {customizingItem.name}</p>
+              
+              <div className="space-y-4 sm:space-y-6">
+                <div>
+                  <label className="text-[9px] sm:text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-2 sm:mb-3">Choose Your Preferences</label>
+                  <div className="grid grid-cols-2 gap-1.5 sm:gap-2">
+                    {preferenceOptions.map(opt => (
+                      <button
+                        key={opt}
+                        onClick={() => togglePreference(opt)}
+                        className={`py-2 sm:py-2.5 px-3 rounded-xl text-xs font-bold transition-all border-2 ${
+                          selectedPreferences.includes(opt) 
+                            ? 'bg-accent border-accent text-white shadow-lg shadow-orange-500/10' 
+                            : 'bg-gray-50 border-transparent text-gray-600 hover:bg-white hover:border-accent/20'
+                        }`}
+                      >
+                        {opt}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                
+                <div>
+                  <label className="text-[9px] sm:text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-2 sm:mb-3">Describe how the dish should be</label>
+                  <textarea 
+                    value={customDescription}
+                    onChange={(e) => setCustomDescription(e.target.value)}
+                    placeholder="e.g. Make it extra hot, no salt on the side..."
+                    className="w-full bg-gray-50 border-2 border-transparent focus:border-accent focus:bg-white p-3 rounded-xl outline-none text-gray-800 transition-all font-medium h-16 sm:h-20 resize-none text-xs"
+                  ></textarea>
+                </div>
+              </div>
+            </div>
+
+            {/* Sticky Action Footer */}
+            <div className="p-4 border-t border-gray-50 bg-white shrink-0">
+              <button 
+                onClick={confirmAddToCart}
+                className="w-full py-3 bg-gray-900 text-white rounded-xl font-bold text-sm sm:text-base hover:bg-black transition-all shadow-xl shadow-gray-200 flex items-center justify-center gap-2 active:scale-[0.98]"
+              >
+                <Plus className="w-4 h-4" /> Add Customized Dish
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Footer / Contact */}
       <footer className="bg-white border-t border-gray-100 pt-20 pb-12 px-6">
@@ -387,7 +519,7 @@ const Dashboard = () => {
               <Utensils className="w-6 h-6" />
             </div>
             <span className="text-2xl font-black tracking-tighter uppercase text-gray-900">
-              Atlas_Dine
+              Dine_Elite
             </span>
           </div>
           <div className="text-gray-400 text-sm font-medium">

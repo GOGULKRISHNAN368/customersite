@@ -13,6 +13,14 @@ const OrderSchema = new mongoose.Schema({
         type: Number,
         required: true,
         default: 1
+      },
+      preference: {
+        type: String,
+        default: 'Standard'
+      },
+      customDescription: {
+        type: String,
+        default: ''
       }
     }
   ],

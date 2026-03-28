@@ -37,7 +37,9 @@ router.post('/', async (req, res, next) => {
       menuItemId: String(item.menuItemId),
       name: String(item.name || 'Unknown Item'),
       price: Number(item.price || 0),
-      quantity: Number(item.quantity || 1)
+      quantity: Number(item.quantity || 1),
+      preference: String(item.preference || 'Standard'),
+      customDescription: String(item.customDescription || '')
     }));
 
     console.log(`📝 Processed ${processedItems.length} items. Total: ₹${totalAmount}`);
