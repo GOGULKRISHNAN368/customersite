@@ -1,6 +1,13 @@
 const mongoose = require('mongoose');
 
 const OrderSchema = new mongoose.Schema({
+  orderId: {
+    type: String,
+    required: true,
+    unique: true
+  },
+  tableNumber: { type: Number, default: 0 },
+  customerName: { type: String, default: "Guest" },
   items: [
     {
       menuItemId: {
@@ -8,6 +15,7 @@ const OrderSchema = new mongoose.Schema({
         required: true
       },
       name: String,
+      dishName: String, // Alias for MenuMagic compatibility
       price: Number,
       quantity: {
         type: Number,
@@ -24,15 +32,14 @@ const OrderSchema = new mongoose.Schema({
       }
     }
   ],
-  totalAmount: {
-    type: Number,
-    required: true
+  totalAmount: { type: Number, required: true },
+  // Adding totalPrice as an alias for MenuMagic Dashboard compatibility
+  totalPrice: { type: Number }, 
+  status: { 
+    type: String, 
+    enum: ['waiting', 'pending', 'preparing', 'served', 'completed', 'Pending', 'Completed'], 
+    default: 'waiting' 
   },
-  status: {
-    type: String,
-    enum: ['Pending', 'Confirmed', 'Delivered'],
-    default: 'Pending'
-  }
 }, { timestamps: true, collection: 'orders' });
 
 module.exports = mongoose.models.Order || mongoose.model('Order', OrderSchema);

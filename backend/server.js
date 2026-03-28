@@ -6,7 +6,14 @@ require('dotenv').config();
 const menuRoutes = require('./routes/menuRoutes');
 const orderRoutes = require('./routes/orderRoutes');
 
+const http = require('http');
+const socketIO = require('./socket');
+
 const app = express();
+const server = http.createServer(app);
+
+// Initialize Socket.io
+socketIO.init(server);
 
 // Middleware
 app.use(cors());
@@ -14,6 +21,7 @@ app.use(express.json());
 
 // Routes
 app.use('/api/menu', menuRoutes);
+app.use('/api/dishes', menuRoutes); // Alias for MenuMagic Dashboard compatibility
 app.use('/api/orders', orderRoutes);
 
 // Database Connection
@@ -33,6 +41,6 @@ app.use((err, req, res, next) => {
 
 const PORT = process.env.PORT || 5000;
 
-app.listen(PORT, () => {
+server.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
 });

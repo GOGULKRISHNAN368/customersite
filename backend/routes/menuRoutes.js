@@ -8,28 +8,15 @@ router.use((req, res, next) => {
   next();
 });
 
+const socketIO = require('../socket');
+
 // GET all available menu items
 router.get('/', async (req, res, next) => {
   try {
-    console.log('🔍 Fetching all available menus from Atlas...');
     const menus = await Menu.find({});
-    console.log(`✅ Found ${menus.length} dishes.`);
     res.json(menus);
   } catch (error) {
-    console.error('❌ Error fetching menus:', error);
-    next(error); // Pass to global error handler in server.js
-  }
-});
-
-// GET menu items by category
-router.get('/category/:category', async (req, res, next) => {
-  try {
-    const { category } = req.params;
-    console.log(`🔍 Fetching menus for category: ${category}`);
-    const menus = await Menu.find({ category });
-    res.json(menus);
-  } catch (error) {
-    console.error(`❌ Error fetching menus for ${category}:`, error);
+    console.error('\u274c Error fetching menus:', error);
     next(error);
   }
 });
@@ -37,12 +24,45 @@ router.get('/category/:category', async (req, res, next) => {
 // POST a new menu item
 router.post('/', async (req, res, next) => {
   try {
-    console.log('📝 Creating new menu item:', req.body.name);
     const newMenu = new Menu(req.body);
     const savedMenu = await newMenu.save();
+    
+    // Emit Real-time Event
+    socketIO.getIO().emit('menuUpdated', { action: 'create', data: savedMenu });
+    
     res.status(201).json(savedMenu);
   } catch (error) {
-    console.error('❌ Error creating menu:', error);
+    console.error('\u274c Error creating menu:', error);
+    next(error);
+  }
+});
+
+// PUT to update a menu item
+router.put('/:id', async (req, res, next) => {
+  try {
+    const updatedMenu = await Menu.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    
+    // Emit Real-time Event
+    socketIO.getIO().emit('menuUpdated', { action: 'update', data: updatedMenu });
+    
+    res.json(updatedMenu);
+  } catch (error) {
+    console.error('\u274c Error updating menu:', error);
+    next(error);
+  }
+});
+
+// DELETE a menu item
+router.delete('/:id', async (req, res, next) => {
+  try {
+    await Menu.findByIdAndDelete(req.params.id);
+    
+    // Emit Real-time Event
+    socketIO.getIO().emit('menuUpdated', { action: 'delete', id: req.params.id });
+    
+    res.json({ message: 'Menu item deleted successfully' });
+  } catch (error) {
+    console.error('\u274c Error deleting menu:', error);
     next(error);
   }
 });

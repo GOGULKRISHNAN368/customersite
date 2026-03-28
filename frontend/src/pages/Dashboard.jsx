@@ -1,7 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { fetchMenus, placeOrder } from '../services/api';
+import { fetchMenus, placeOrder, fetchOrderById, addItemsToOrder, downloadReceipt } from '../services/api';
 import MenuCard from '../components/MenuCard';
-import { Utensils, Search, Filter, Sparkles, ChevronDown, ShoppingBag, X, Plus, Minus, CheckCircle2 } from 'lucide-react';
+import { Utensils, Search, Filter, Sparkles, ChevronDown, ShoppingBag, X, Plus, Minus, CheckCircle2, Download } from 'lucide-react';
+import { io } from 'socket.io-client';
+
+const socket = io('http://localhost:5000'); // Connect to our backend
 
 const Dashboard = () => {
   const [menus, setMenus] = useState([]);
@@ -13,7 +16,15 @@ const Dashboard = () => {
   // Cart State
   const [cart, setCart] = useState([]);
   const [isCartOpen, setIsCartOpen] = useState(false);
-  const [orderStatus, setOrderStatus] = useState({ loading: false, success: false });
+  const [orderStatus, setOrderStatus] = useState({ loading: false, success: false, generatedOrderId: null, isAdding: false });
+
+  // My Order State
+  const [isMyOrderOpen, setIsMyOrderOpen] = useState(false);
+  const [myOrderInputId, setMyOrderInputId] = useState('');
+  const [myOrderData, setMyOrderData] = useState(null);
+  const [myOrderLoading, setMyOrderLoading] = useState(false);
+  const [myOrderError, setMyOrderError] = useState('');
+  const [cartOrderIdInput, setCartOrderIdInput] = useState('');
 
   // Customization States
   const [customizingItem, setCustomizingItem] = useState(null);
@@ -37,6 +48,40 @@ const Dashboard = () => {
       }
     };
     loadMenus();
+
+    // Socket.io listeners
+    socket.on('menuUpdated', (update) => {
+      console.log('📡 Menu Update Received:', update);
+      if (update.action === 'create') {
+        setMenus(prev => [...prev, update.data]);
+      } else if (update.action === 'update') {
+        setMenus(prev => prev.map(m => m._id === update.data._id ? update.data : m));
+      } else if (update.action === 'delete') {
+        setMenus(prev => prev.filter(m => m._id !== update.id));
+      }
+    });
+
+    socket.on('orderCompleted', (completedOrder) => {
+      console.log('📡 Order Completed Received:', completedOrder);
+      setMyOrderData(prev => {
+        if (prev && prev.orderId === completedOrder.orderId) return completedOrder;
+        return prev;
+      });
+    });
+
+    socket.on('orderUpdated', (updatedOrder) => {
+      console.log('📡 Order Update Received:', updatedOrder);
+      setMyOrderData(prev => {
+        if (prev && prev.orderId === updatedOrder.orderId) return updatedOrder;
+        return prev;
+      });
+    });
+
+    return () => {
+      socket.off('menuUpdated');
+      socket.off('orderCompleted');
+      socket.off('orderUpdated');
+    };
   }, []);
 
   const getCurrentSlot = () => {
@@ -129,7 +174,7 @@ const Dashboard = () => {
   const handlePlaceOrder = async () => {
     if (cart.length === 0) return;
     
-    setOrderStatus({ loading: true, success: false });
+    setOrderStatus({ loading: true, success: false, generatedOrderId: null, isAdding: false });
     try {
       const orderData = {
         items: cart.map(item => ({
@@ -142,20 +187,69 @@ const Dashboard = () => {
           preference: item.preference,
           customDescription: item.customDescription
         })),
-        totalAmount: cartTotal
+        totalAmount: cartTotal,
+        status: 'waiting'
       };
       
-      await placeOrder(orderData);
-      setOrderStatus({ loading: false, success: true });
+      let res;
+      if (cartOrderIdInput.trim() !== '') {
+        res = await addItemsToOrder(cartOrderIdInput.trim(), orderData);
+        setOrderStatus({ loading: false, success: true, generatedOrderId: res.orderId, isAdding: true });
+      } else {
+        res = await placeOrder(orderData);
+        setOrderStatus({ loading: false, success: true, generatedOrderId: res.orderId, isAdding: false });
+      }
+
       setCart([]);
       setTimeout(() => {
-        setOrderStatus({ loading: false, success: false });
+        setOrderStatus({ loading: false, success: false, generatedOrderId: null, isAdding: false });
         setIsCartOpen(false);
-      }, 3000);
+        setCartOrderIdInput('');
+      }, 6000); // Give user more time to copy ID
     } catch (err) {
       console.error('Order placement failed:', err);
-      setOrderStatus({ loading: false, success: false });
-      alert('Failed to place order. Database connection error.');
+      setOrderStatus({ loading: false, success: false, generatedOrderId: null, isAdding: false });
+      alert('Failed to place order. Database connection error or invalid Order ID.');
+    }
+  };
+
+  const handleFetchMyOrder = async () => {
+    if (!myOrderInputId) return;
+    setMyOrderLoading(true);
+    setMyOrderError('');
+    setMyOrderData(null);
+    try {
+      const data = await fetchOrderById(myOrderInputId);
+      setMyOrderData(data);
+    } catch (err) {
+      setMyOrderError('Order not found. Please check your Order ID.');
+    } finally {
+      setMyOrderLoading(false);
+    }
+  };
+
+  const handleDownloadReceipt = async () => {
+    if (!myOrderData) return;
+    try {
+      setMyOrderLoading(true);
+      const blob = await downloadReceipt(myOrderData.orderId);
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `receipt-${myOrderData.orderId}.pdf`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      
+      // Order is removed from DB, so clear it from view
+      setMyOrderData(null);
+      setMyOrderInputId('');
+      alert('Receipt downloaded successfully. Order has been completed and removed from our active system.');
+      setIsMyOrderOpen(false);
+    } catch (err) {
+      alert('Failed to download receipt.');
+    } finally {
+      setMyOrderLoading(false);
     }
   };
 
@@ -211,6 +305,12 @@ const Dashboard = () => {
           </div>
           <div className="flex items-center gap-4">
             <button 
+              onClick={() => setIsMyOrderOpen(true)}
+              className="px-4 py-2 bg-gray-100 text-gray-900 border border-gray-200 text-sm font-bold rounded-full hover:bg-gray-200 transition-all shadow-sm"
+            >
+              View My Order
+            </button>
+            <button 
               onClick={() => setIsCartOpen(true)}
               className="relative p-2 text-gray-700 hover:text-accent transition-colors"
             >
@@ -221,7 +321,7 @@ const Dashboard = () => {
                 </span>
               )}
             </button>
-            <button className="px-4 py-2 bg-gray-900 text-white text-sm font-bold rounded-full hover:bg-black transition-all">
+            <button className="px-4 py-2 bg-gray-900 text-white text-sm font-bold rounded-full hover:bg-black transition-all shadow-md">
               Dashboard
             </button>
           </div>
@@ -417,22 +517,39 @@ const Dashboard = () => {
             </div>
             
             <div className="p-6 border-t border-gray-100 bg-gray-50/50">
-              <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center justify-between mb-4">
                 <span className="text-gray-500 font-bold uppercase text-xs tracking-widest">Grand Total</span>
                 <span className="text-2xl font-black text-gray-900">₹{cartTotal.toFixed(0)}</span>
               </div>
               
+              {!orderStatus.success && cart.length > 0 && (
+                <div className="mb-4">
+                  <label className="text-[10px] sm:text-xs font-bold text-gray-400 uppercase tracking-widest block mb-1">Add to Existing Order?</label>
+                  <input 
+                    type="text" 
+                    placeholder="Enter Order ID"
+                    value={cartOrderIdInput}
+                    onChange={(e) => setCartOrderIdInput(e.target.value)}
+                    className="w-full bg-white border border-gray-200 focus:border-accent p-2.5 rounded-xl outline-none text-gray-800 transition-all font-medium text-sm shadow-sm placeholder:text-gray-300"
+                  />
+                </div>
+              )}
+
               {orderStatus.success ? (
-                <div className="w-full py-4 bg-green-500 text-white rounded-2xl font-bold flex items-center justify-center gap-2 animate-bounce">
-                  <CheckCircle2 className="w-5 h-5" /> Order Placed!
+                <div className="w-full py-4 bg-green-500 text-white rounded-2xl font-bold flex flex-col items-center justify-center gap-1 shadow-lg shadow-green-500/20 text-center">
+                  <div className="flex items-center gap-2"><CheckCircle2 className="w-5 h-5" /> {orderStatus.isAdding ? 'Items Added!' : 'Order Placed!'}</div>
+                  <div className="text-xs font-medium bg-black/20 px-3 py-1 rounded-full mt-2">
+                    Your Order ID: <span className="font-black text-white">{orderStatus.generatedOrderId}</span>
+                  </div>
+                  <div className="text-[9px] mt-1 opacity-80">Do not refresh. Please save this ID.</div>
                 </div>
               ) : (
                 <button 
                   onClick={handlePlaceOrder}
                   disabled={cart.length === 0 || orderStatus.loading}
-                  className="w-full py-4 bg-gray-900 text-white rounded-2xl font-bold hover:bg-black disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-xl shadow-gray-200"
+                  className="w-full py-4 bg-gray-900 text-white rounded-2xl font-bold hover:bg-black disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-xl shadow-gray-200 flex items-center justify-center gap-2 active:scale-95"
                 >
-                  {orderStatus.loading ? 'Syncing Order...' : 'Place My Order'}
+                  {orderStatus.loading ? 'Syncing Order...' : (cartOrderIdInput.trim() ? 'Add Items to Order' : 'Place My Order')}
                 </button>
               )}
             </div>
@@ -506,6 +623,94 @@ const Dashboard = () => {
               >
                 <Plus className="w-4 h-4" /> Add Customized Dish
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* My Order Modal */}
+      {isMyOrderOpen && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setIsMyOrderOpen(false)}></div>
+          <div className="relative w-full max-w-md bg-white rounded-3xl shadow-2xl flex flex-col overflow-hidden animate-in zoom-in-95 duration-200 max-h-[90vh]">
+            <div className="p-6 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
+              <h2 className="text-xl font-black text-gray-900">My Order Details</h2>
+              <button onClick={() => setIsMyOrderOpen(false)} className="p-2 hover:bg-gray-200 rounded-full transition-colors text-gray-500">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <div className="p-6 flex-1 overflow-y-auto custom-scrollbar">
+              <div className="mb-6 flex gap-2">
+                <input 
+                  type="text" 
+                  placeholder="Enter your Order ID..."
+                  value={myOrderInputId}
+                  onChange={(e) => setMyOrderInputId(e.target.value)}
+                  className="flex-1 bg-gray-50 border-2 border-transparent focus:border-accent focus:bg-white px-4 py-3 rounded-xl outline-none text-gray-900 font-bold shadow-sm placeholder:text-gray-400 placeholder:font-medium"
+                />
+                <button 
+                  onClick={handleFetchMyOrder}
+                  disabled={myOrderLoading || !myOrderInputId}
+                  className="px-6 py-3 bg-accent text-white font-bold rounded-xl hover:bg-orange-600 transition-colors disabled:opacity-50 shadow-md shadow-orange-500/20"
+                >
+                  {myOrderLoading && !myOrderData ? 'Load...' : 'View'}
+                </button>
+              </div>
+
+              {myOrderError && (
+                <div className="p-4 bg-red-50 text-red-600 rounded-xl text-sm font-bold border border-red-100 mb-4">
+                  {myOrderError}
+                </div>
+              )}
+
+              {myOrderData && (
+                <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                  <div className="flex justify-between items-center text-sm font-medium border-b border-gray-100 pb-2">
+                    <span className="text-gray-500">Order ID: <span className="text-gray-900 font-bold ml-1">{myOrderData.orderId}</span></span>
+                    <span className={`px-2.5 py-1 font-bold rounded-lg text-xs uppercase tracking-wide ${
+                      myOrderData.status === 'waiting' ? 'bg-orange-100 text-orange-600' :
+                      myOrderData.status === 'pending' ? 'bg-red-100 text-red-600' :
+                      myOrderData.status === 'preparing' ? 'bg-blue-100 text-blue-600' :
+                      'bg-green-100 text-green-700'
+                    }`}>
+                      {myOrderData.status}
+                    </span>
+                  </div>
+                  
+                  <div className="space-y-3 mt-4">
+                    {myOrderData.items.map((item, idx) => (
+                      <div key={idx} className="flex justify-between items-start bg-gray-50 p-3 rounded-xl">
+                        <div className="flex-1">
+                          <h4 className="font-bold text-gray-900 text-sm">{item.quantity}x {item.name}</h4>
+                          <div className="text-[10px] text-gray-500 mt-1 flex gap-2 font-medium">
+                            {item.preference && item.preference !== 'Standard' && (
+                              <span className="bg-white border border-gray-200 px-1.5 py-0.5 rounded text-gray-600">{item.preference}</span>
+                            )}
+                          </div>
+                        </div>
+                        <span className="font-bold text-gray-900 whitespace-nowrap ml-4">₹{(item.price * item.quantity).toFixed(0)}</span>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="flex justify-between items-center bg-gray-900 text-white p-4 rounded-2xl mt-6 shadow-md">
+                    <span className="font-bold tracking-wide">Total Bill</span>
+                    <span className="text-xl font-black">₹{myOrderData.totalAmount.toFixed(0)}</span>
+                  </div>
+
+                  <button 
+                    onClick={handleDownloadReceipt}
+                    disabled={myOrderLoading}
+                    className="w-full mt-4 py-4 bg-green-500 text-white rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-green-600 transition-all shadow-lg shadow-green-500/20 active:scale-[0.98]"
+                  >
+                    <Download className="w-5 h-5" /> Download Receipt
+                  </button>
+                  <p className="text-center text-[10px] text-gray-400 font-medium italic mt-2">
+                    Downloading the receipt will mark the order as completed.
+                  </p>
+                </div>
+              )}
             </div>
           </div>
         </div>

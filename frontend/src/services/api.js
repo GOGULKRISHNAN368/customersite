@@ -25,10 +25,42 @@ export const fetchMenusByCategory = async (category) => {
 };
 export const placeOrder = async (orderData) => {
   try {
-    const response = await api.post('/orders', orderData);
+    const response = await api.post('/orders/create', orderData);
     return response.data;
   } catch (error) {
     console.error('Error placing order:', error);
+    throw error;
+  }
+};
+
+export const fetchOrderById = async (orderId) => {
+  try {
+    const response = await api.get(`/orders/${orderId}`);
+    return response.data;
+  } catch (error) {
+    console.error(`Error fetching order ${orderId}:`, error);
+    throw error;
+  }
+};
+
+export const addItemsToOrder = async (orderId, orderData) => {
+  try {
+    const response = await api.post(`/orders/add-items/${orderId}`, orderData);
+    return response.data;
+  } catch (error) {
+    console.error(`Error adding items to order ${orderId}:`, error);
+    throw error;
+  }
+};
+
+export const downloadReceipt = async (orderId) => {
+  try {
+    const response = await api.post(`/orders/receipt/${orderId}`, {}, {
+      responseType: 'blob'
+    });
+    return response.data;
+  } catch (error) {
+    console.error(`Error downloading receipt for order ${orderId}:`, error);
     throw error;
   }
 };
