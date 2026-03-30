@@ -18,11 +18,13 @@ socketIO.init(server);
 // Middleware
 app.use(cors());
 app.use(express.json());
+app.use('/uploads', express.static('uploads'));
 
 // Routes
 app.use('/api/menu', menuRoutes);
 app.use('/api/dishes', menuRoutes); // Alias for MenuMagic Dashboard compatibility
 app.use('/api/orders', orderRoutes);
+
 
 // Database Connection
 mongoose.connect(process.env.MONGO_URI)
