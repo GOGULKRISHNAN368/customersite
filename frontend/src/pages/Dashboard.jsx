@@ -321,8 +321,15 @@ const Dashboard = () => {
                 </span>
               )}
             </button>
-            <button className="px-4 py-2 bg-gray-900 text-white text-sm font-bold rounded-full hover:bg-black transition-all shadow-md">
-              Dashboard
+            <button 
+              onClick={() => {
+                localStorage.removeItem('token');
+                localStorage.removeItem('user');
+                window.location.href = '/login';
+              }}
+              className="px-4 py-2 bg-red-600 text-white text-sm font-bold rounded-full hover:bg-red-700 transition-all shadow-md"
+            >
+              Logout
             </button>
           </div>
         </div>

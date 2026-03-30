@@ -5,6 +5,7 @@ require('dotenv').config();
 
 const menuRoutes = require('./routes/menuRoutes');
 const orderRoutes = require('./routes/orderRoutes');
+const authRoutes = require('./routes/authRoutes');
 
 const http = require('http');
 const socketIO = require('./socket');
@@ -24,6 +25,7 @@ app.use('/uploads', express.static('uploads'));
 app.use('/api/menu', menuRoutes);
 app.use('/api/dishes', menuRoutes); // Alias for MenuMagic Dashboard compatibility
 app.use('/api/orders', orderRoutes);
+app.use('/api/auth', authRoutes);
 
 
 // Database Connection
